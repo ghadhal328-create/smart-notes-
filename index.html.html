@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Studio — منصة توليد المحتوى الذكي</title>
+<style>
+:root {--bg:#0f172a; --text:#e5e7eb; --muted:#94a3b8; --card:#111827; --brand:#7c3aed; --brand2:#22d3ee; --chip-bg:#0a0f1b; --chip-border:rgba(255,255,255,.2);}
+body.light {--bg:#f9fafb; --text:#111; --muted:#555; --card:#fff; --chip-bg:#f1f5f9; --chip-border:#cbd5e1;}
+body {margin:0; font-family:'Cairo',sans-serif; background:var(--bg); color:var(--text);}
+header{text-align:center;padding:20px;}
+h1{margin:0;font-size:28px;}
+.container{max-width:1100px;margin:auto;padding:20px;}
+textarea,select {width:100%;border-radius:12px;border:1px solid #ccc;padding:12px;margin-bottom:10px;font-family:inherit;font-size:14px;background:var(--card);color:var(--text);}
+button {padding:10px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;cursor:pointer;font-weight:bold;transition:.2s;}
+button:hover{opacity:.9;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;}
+.card{background:var(--card);padding:16px;border-radius:12px;}
+.out{min-height:80px;white-space:pre-wrap;line-height:1.6;margin-top:8px;padding:10px;border:1px solid #ccc;border-radius:8px;}
+.row{display:flex;justify-content:space-between;align-items:center;gap:6px;}
+.copy,.speak{font-size:12px;background:var(--chip-bg);border:1px solid var(--chip-border);padding:4px 8px;border-radius:6px;cursor:pointer;}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.chip{padding:6px 10px;border-radius:999px;background:var(--chip-bg);border:1px solid var(--chip-border);font-size:13px;}
+footer{text-align:center;color:var(--muted);font-size:12px;margin-top:20px;}
+.toast{position:fixed;bottom:20px;right:20px;background:#333;color:#fff;padding:8px 14px;border-radius:6px;opacity:0;transition:.3s;}
+.toast.show{opacity:1;}
+#toggleMode{position:fixed;top:10px;left:10px;font-size:18px;padding:6px 10px;}
+.visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap;}
+</style>
+</head>
+<body>
+<button id="toggleMode">🌙</button>
+<header><h1>AI Studio</h1></header>
+<div class="container">
+<textarea id="input" placeholder="اكتب أو ألصق نصًا عربيًا هنا..."></textarea>
+<button id="runBtn">🚀 إنشاء</button>
+<button id="demoBtn">نص تجريبي</button>
+<div style="margin:15px 0;">
+<label for="lang" class="visually-hidden">اختر لغة الترجمة</label>
+<select id="lang" name="lang" aria-label="اختيار اللغة">
+<option value="en">الإنجليزية</option>
+<option value="fr">الفرنسية</option>
+<option value="es">الإسبانية</option>
+<option value="ar">العربية</option>
+</select>
+</div>
+<div class="grid">
+<div class="card"><div class="row"><h2>📌 العنوان</h2><span class="copy" data-copy="title">نسخ</span><span class="speak" data-speak="title">🔊</span></div><div id="title" class="out"></div></div>
+<div class="card"><div class="row"><h2>✍ الملخص</h2><span class="copy" data-copy="summary">نسخ</span><span class="speak" data-speak="summary">🔊</span></div><div id="summary" class="out"></div></div>
+<div class="card"><div class="row"><h2>🔑 النقاط</h2><span class="copy" data-copy="bullets">نسخ</span><span class="speak" data-speak="bullets">🔊</span></div><div id="bullets" class="out"></div></div>
+<div class="card"><div class="row"><h2>#️⃣ هاشتاقات</h2><span class="copy" data-copy="tags">نسخ</span><span class="speak" data-speak="tags">🔊</span></div><div id="tags" class="chips"></div></div>
+<div class="card"><div class="row"><h2>🌍 الترجمة</h2><span class="copy" data-copy="translation">نسخ</span><span class="speak" data-speak="translation">🔊</span></div><div id="translation" class="out"></div></div>
+</div>
+</div>
+<footer>© 2025 — مشروع واجب جامعي</footer>
+<div id="toast" class="toast"></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const API_KEY="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";
+  const SUM_MODEL="csebuetnlp/mT5_multilingual_XLSum";
+  const TRANS_MODEL="facebook/mbart-large-50-many-to-many-mmt";
+  const QA_MODEL="deepset/roberta-base-squad2";
+  const $=id=>document.getElementById(id);
+
+  function showToast(msg){
+    const t=$("toast");
+    t.textContent=msg;
+    t.classList.add("show");
+    setTimeout(()=>t.classList.remove("show"),2000);
+  }
+
+  function copy(id){
+    const el=$(id);
+    let txt=id==="tags"?Array.from(el.querySelectorAll(".chip")).map(c=>c.textContent).join(" "):el.textContent;
+    navigator.clipboard.writeText(txt);
+    showToast("تم النسخ ✔");
+  }
+
+  function speak(id){
+    const text=$(id).textContent;
+    if(!text) return;
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang=(id==="translation")?( $("lang").value==="ar"?"ar-SA":"en-US"):"ar-SA";
+    speechSynthesis.speak(u);
+  }
+
+  async function callHF(model,input,extra){
+    try{
+      const res=await fetch(`https://api-inference.huggingface.co/models/${model}`,{
+        method:"POST",
+        headers:{
+          "Authorization": `Bearer ${API_KEY}`,
+          "Content-Type":"application/json"
+        },
+        body: JSON.stringify({inputs: input, ...extra})
+      });
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      const data=await res.json();
+      if(data.error) throw new Error(data.error);
+      return data;
+    }catch(err){
+      showToast("❌ "+err.message);
+      console.error(err);
+      return null;
+    }
+  }
+
+  function clean(t){return(t||"").replace(/\s+/g," ").trim();}
+  function makeTitle(summary){return clean(summary.split(" ").slice(0,10).join(" "));}
+  function toBullets(summary){return summary.split(/،|\.|\n/).filter(x=>x.trim()).map(x=>"• "+x.trim()).join("\n");}
+  function makeHashtags(text){return [...new Set(text.split(/\s+/).filter(w=>w.length>4))].slice(0,6).map(w=>"#"+w);}
+
+  $("runBtn").onclick=async()=>{
+    const text=$("input").value.trim();
+    if(!text) return showToast("⚠ الرجاء إدخال نص");
+    $("summary").textContent="⏳ جاري المعالجة...";
+    try{
+      // التلخيص
+      const sumData=await callHF(SUM_MODEL,text,{parameters:{max_length:140,min_length:60,temperature:0.3}});
+      const summary=sumData?.[0]?.summary_text||"لم يتم التلخيص";
+      $("summary").textContent=summary;
+      $("title").textContent=makeTitle(summary);
+      $("bullets").textContent=toBullets(summary);
+      $("tags").innerHTML="";
+      makeHashtags(summary).forEach(t=>{
+        const d=document.createElement("div");
+        d.className="chip";
+        d.textContent=t;
+        $("tags").appendChild(d);
+      });
+
+      // الترجمة
+      const lang=$("lang").value;
+      const transData=await callHF(TRANS_MODEL,text,{
+        parameters:{
+          src_lang:"ar_AR",
+          tgt_lang: lang+"_XX",
+          num_beams:5
+        }
+      });
+      $("translation").textContent=transData?.[0]?.translation_text||"—";
+
+      // الإجابة الدقيقة (QA)
+      const qaData=await callHF(QA_MODEL,{question:text, context:text});
+      console.log("Answer:", qaData?.answer);
+    }catch(e){
+      $("summary").textContent="❌ خطأ: "+e.message;
+    }
+  };
+
+  $("demoBtn").onclick=()=>{$("input").value="شهدت المملكة العربية السعودية في السنوات الأخيرة نهضة تنموية شاملة ضمن رؤية 2030، إذ ركزت المبادرات على تنويع الاقتصاد وتمكين القطاعات غير النفطية."};
+  document.querySelectorAll(".copy").forEach(b=>b.onclick=()=>copy(b.dataset.copy));
+  document.querySelectorAll(".speak").forEach(b=>b.onclick=()=>speak(b.dataset.speak));
+  $("toggleMode").onclick=()=>{
+    document.body.classList.toggle("light");
+    $("toggleMode").textContent=document.body.classList.contains("light")?"☀":"🌙";
+  };
+});
+</script>
+</body>
+</html>
